@@ -1100,12 +1100,22 @@ public class DnsNameResolver extends InetNameResolver {
             boolean flush,
             ChannelPromise writePromise,
             Promise<AddressedEnvelope<? extends DnsResponse, InetSocketAddress>> promise) {
+        return query0(nameServerAddr, question, additionals, flush, false, writePromise, promise);
+    }
+
+    final Future<AddressedEnvelope<DnsResponse, InetSocketAddress>> query0(
+            InetSocketAddress nameServerAddr, DnsQuestion question,
+            DnsRecord[] additionals,
+            boolean flush,
+            boolean disableOptResource,
+            ChannelPromise writePromise,
+            Promise<AddressedEnvelope<? extends DnsResponse, InetSocketAddress>> promise) {
         assert !writePromise.isVoid();
 
         final Promise<AddressedEnvelope<DnsResponse, InetSocketAddress>> castPromise = cast(
                 checkNotNull(promise, "promise"));
         try {
-            new DnsQueryContext(this, nameServerAddr, question, additionals, castPromise)
+            new DnsQueryContext(this, nameServerAddr, question, additionals, disableOptResource, castPromise)
                     .query(flush, writePromise);
             return castPromise;
         } catch (Exception e) {

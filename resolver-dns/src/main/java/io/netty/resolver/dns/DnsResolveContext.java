@@ -106,6 +106,7 @@ abstract class DnsResolveContext<T> {
     private List<T> finalResult;
     private int allowedQueries;
     private boolean triedCNAME;
+    private boolean triedDisablingOptResource;
 
     DnsResolveContext(DnsNameResolver parent,
                       String hostname, int dnsClass, DnsRecordType[] expectedTypes,
@@ -328,6 +329,19 @@ abstract class DnsResolveContext<T> {
                        final boolean flush,
                        final Promise<List<T>> promise,
                        final Throwable cause) {
+        query(nameServerAddrStream, nameServerAddrStreamIndex, question, queryLifecycleObserver, flush, false, promise,
+              cause);
+    }
+
+    private void query(
+            final DnsServerAddressStream nameServerAddrStream,
+            final int nameServerAddrStreamIndex,
+            final DnsQuestion question,
+            final DnsQueryLifecycleObserver queryLifecycleObserver,
+            final boolean flush,
+            final boolean disableOptResource,
+            final Promise<List<T>> promise,
+            final Throwable cause) {
         if (nameServerAddrStreamIndex >= nameServerAddrStream.size() || allowedQueries == 0 || promise.isCancelled()) {
             tryToFinishResolve(nameServerAddrStream, nameServerAddrStreamIndex, question, queryLifecycleObserver,
                                promise, cause);
@@ -347,7 +361,8 @@ abstract class DnsResolveContext<T> {
                 parent.ch.eventLoop().newPromise();
 
         final Future<AddressedEnvelope<DnsResponse, InetSocketAddress>> f =
-                parent.query0(nameServerAddr, question, additionals, flush, writePromise, queryPromise);
+                parent.query0(nameServerAddr, question, additionals, flush, disableOptResource, writePromise,
+                              queryPromise);
 
         queriesInProgress.add(f);
 
@@ -794,12 +809,23 @@ abstract class DnsResolveContext<T> {
             // If cause != null we know this was caused by a timeout / cancel / transport exception. In this case we
             // won't try to resolve the CNAME as we only should do this if we could not get the expected records
             // because they do not exist and the DNS server did probably signal it.
-            if (cause == null && !triedCNAME) {
-                // As the last resort, try to query CNAME, just in case the name server has it.
-                triedCNAME = true;
+            if (cause == null) {
+                if (!triedCNAME) {
+                    // Try to query CNAME, just in case the name server has it.
+                    triedCNAME = true;
 
-                query(hostname, DnsRecordType.CNAME, getNameServers(hostname), true, promise);
-                return;
+                    query(hostname, DnsRecordType.CNAME, getNameServers(hostname), true, promise);
+                    return;
+                }
+
+                if (parent.isOptResourceEnabled() && !triedDisablingOptResource) {
+                    // As a last resource, try querying without optional records since they are often rejected by
+                    // DNS servers.
+                    triedDisablingOptResource = true;
+
+                    query(nameServerAddrStream, 0, question, newDnsQueryLifecycleObserver(question), true, true,
+                          promise, cause);
+                }
             }
         } else {
             queryLifecycleObserver.queryCancelled(allowedQueries);

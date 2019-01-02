@@ -59,6 +59,7 @@ final class DnsQueryContext implements FutureListener<AddressedEnvelope<DnsRespo
                     InetSocketAddress nameServerAddr,
                     DnsQuestion question,
                     DnsRecord[] additionals,
+                    boolean disableOptResource,
                     Promise<AddressedEnvelope<DnsResponse, InetSocketAddress>> promise) {
 
         this.parent = checkNotNull(parent, "parent");
@@ -72,7 +73,7 @@ final class DnsQueryContext implements FutureListener<AddressedEnvelope<DnsRespo
         // Ensure we remove the id from the QueryContextManager once the query completes.
         promise.addListener(this);
 
-        if (parent.isOptResourceEnabled()) {
+        if (!disableOptResource && parent.isOptResourceEnabled()) {
             optResource = new AbstractDnsOptPseudoRrRecord(parent.maxPayloadSize(), 0, 0) {
                 // We may want to remove this in the future and let the user just specify the opt record in the query.
             };
